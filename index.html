@@ -4,18 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Stickman Horror: The Rooms</title>
+    <script>
+        // ระบบแจ้งเตือน Error (ถ้าเกมพังจะเด้งบอกทันที)
+        window.onerror = function(msg, url, line) {
+            alert("เกิดข้อผิดพลาด!\n" + msg + "\nบรรทัดที่: " + line);
+            return false;
+        };
+    </script>
     <style>
         body {
             margin: 0;
             padding: 0;
             background-color: #050505;
             overflow: hidden;
-            touch-action: none;
+            /* แก้ไข: ย้าย touch-action ไปจัดการเฉพาะส่วน */
             font-family: 'Sarabun', sans-serif;
             user-select: none;
+            -webkit-user-select: none;
         }
         canvas {
             display: block;
+            touch-action: none; /* ห้ามเลื่อนจอเฉพาะตอนเล่นเกม */
         }
         
         /* --- UI Layers --- */
@@ -26,9 +35,10 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
-            display: none; /* ซ่อนตอนอยู่เมนู */
+            display: none;
             flex-direction: column;
             justify-content: space-between;
+            z-index: 5;
         }
         .hud {
             padding: 20px;
@@ -62,21 +72,14 @@
             align-items: center;
             justify-content: center;
             color: white;
-            z-index: 10;
+            z-index: 20;
             pointer-events: auto;
+            touch-action: manipulation; /* แก้ไข: ให้ปุ่มกดติดง่ายบนมือถือ */
         }
         
-        /* Specific ID styles */
-        #main-menu {
-            background: #000; /* เมนูหลักพื้นหลังทึบ */
-            z-index: 20;
-        }
-        #game-over-screen {
-            display: none; /* ซ่อนไว้ก่อน */
-            z-index: 20;
-        }
+        #main-menu { background: #000; }
+        #game-over-screen { display: none; }
 
-        /* Typography & Buttons */
         h1 { margin-bottom: 10px; font-size: 40px; text-align: center; color: #d32f2f; text-shadow: 0 0 10px #ff0000; }
         p { margin-bottom: 30px; font-size: 18px; color: #aaa; text-align: center; }
         
@@ -84,13 +87,17 @@
             background: #222;
             border: 1px solid #444;
             color: white;
-            padding: 15px 40px;
-            font-size: 22px;
+            padding: 20px 50px; /* ปุ่มใหญ่ขึ้น */
+            font-size: 24px;
             cursor: pointer;
-            border-radius: 8px;
+            border-radius: 10px;
             transition: all 0.2s;
             font-family: 'Sarabun', sans-serif;
-            margin-top: 10px;
+            margin-top: 15px;
+            /* แก้ไข: บังคับให้ปุ่มรับสัมผัสแน่นอน */
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         .btn:hover { background: #333; border-color: #666; }
         .btn:active { transform: scale(0.95); background: #444; }
@@ -111,14 +118,15 @@
 </head>
 <body>
 
-    <!-- 1. Main Menu Screen -->
+    <!-- Main Menu -->
     <div id="main-menu" class="screen">
         <h1>STICKMAN HORROR<br><span style="font-size:24px; color:#aaa;">THE ROOMS</span></h1>
         <p>ค้นหากุญแจ 5 ดอก แล้วหนีไปซะ</p>
+        <!-- เพิ่ม ontouchstart เพื่อความชัวร์ -->
         <button class="btn btn-start" onclick="startGame()">เริ่มเกม</button>
     </div>
 
-    <!-- 2. In-Game UI -->
+    <!-- UI Layer -->
     <div id="ui-layer">
         <div class="hud">
             <span id="key-counter">🔑 0/5</span>
@@ -127,12 +135,12 @@
         <div id="controls-hint">แตะค้างเพื่อเดิน / ลากเพื่อวิ่ง</div>
     </div>
 
-    <!-- 3. Game Over Screen -->
+    <!-- Game Over Screen -->
     <div id="game-over-screen" class="screen">
         <h1 id="go-title">Game Over</h1>
         <p id="go-desc">โดนจับได้ซะแล้ว...</p>
         <button class="btn btn-retry" onclick="startGame()">เล่นใหม่อีกครั้ง</button>
-        <button class="btn" onclick="showMainMenu()" style="margin-top: 10px; font-size: 16px; padding: 10px 20px;">กลับเมนูหลัก</button>
+        <button class="btn" onclick="showMainMenu()" style="margin-top: 10px; font-size: 18px; padding: 15px 30px;">กลับเมนูหลัก</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -141,7 +149,7 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
-        // Screens & UI
+        // DOM Elements
         const mainMenu = document.getElementById('main-menu');
         const uiLayer = document.getElementById('ui-layer');
         const goScreen = document.getElementById('game-over-screen');
@@ -150,11 +158,12 @@
         const goTitle = document.getElementById('go-title');
         const goDesc = document.getElementById('go-desc');
 
-        // --- Game Settings ---
+        // Game Config
         const TILE_SIZE = 50;
         const MAP_WIDTH = 50;
         const MAP_HEIGHT = 50;
         
+        // Game State
         let map = [];
         let rooms = [];
         let player = { x: 0, y: 0, radius: 12, speed: 5, angle: 0, moving: false };
@@ -169,13 +178,13 @@
         let isGameRunning = false;
         let gameTime = 0;
 
-        // Joystick Input
+        // Input State
         let touchData = { active: false, startX: 0, startY: 0, currX: 0, currY: 0 };
 
+        // Resize Canvas
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            // วาดพื้นหลังรอไว้ถ้ายังไม่เริ่มเกม
             if(!isGameRunning) {
                 ctx.fillStyle = '#000';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -184,7 +193,8 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // --- Screen Management ---
+        // --- Core Functions ---
+
         function showMainMenu() {
             isGameRunning = false;
             goScreen.style.display = 'none';
@@ -193,46 +203,48 @@
         }
 
         function startGame() {
-            // Hide menus, show UI
-            mainMenu.style.display = 'none';
-            goScreen.style.display = 'none';
-            uiLayer.style.display = 'flex';
-            
-            // Reset Game State
-            isGameRunning = true;
-            keysCollected = 0;
-            exitDoor.open = false;
-            gameTime = 0;
-            touchData.active = false;
-            
-            updateHUD();
-            uiStatus.textContent = "หาทางออก...";
-            uiStatus.style.color = "#ff4444";
-            
-            generateMap();
-            loop();
+            try {
+                // UI Toggle
+                mainMenu.style.display = 'none';
+                goScreen.style.display = 'none';
+                uiLayer.style.display = 'flex';
+                
+                // Reset State
+                isGameRunning = true;
+                keysCollected = 0;
+                exitDoor.open = false;
+                gameTime = 0;
+                touchData.active = false;
+                
+                // Reset HUD
+                updateHUD();
+                uiStatus.textContent = "หาทางออก...";
+                uiStatus.style.color = "#ff4444";
+                
+                // Start Logic
+                generateMap();
+                loop();
+            } catch (e) {
+                alert("Start Error: " + e.message);
+            }
         }
 
-        // --- Map Generation ---
         function generateMap() {
             map = [];
             rooms = [];
             
-            // 1. Fill walls
+            // 1. Create Walls
             for (let y = 0; y < MAP_HEIGHT; y++) {
                 let row = [];
                 for (let x = 0; x < MAP_WIDTH; x++) row.push(1);
                 map.push(row);
             }
 
-            // 2. Random Rooms
+            // 2. Create Rooms
             const MAX_ROOMS = 25;
-            const MIN_SIZE = 5;
-            const MAX_SIZE = 10;
-
             for (let i = 0; i < MAX_ROOMS; i++) {
-                const w = Math.floor(Math.random() * (MAX_SIZE - MIN_SIZE + 1)) + MIN_SIZE;
-                const h = Math.floor(Math.random() * (MAX_SIZE - MIN_SIZE + 1)) + MIN_SIZE;
+                const w = Math.floor(Math.random() * 6) + 5; // 5-10
+                const h = Math.floor(Math.random() * 6) + 5;
                 const x = Math.floor(Math.random() * (MAP_WIDTH - w - 2)) + 1;
                 const y = Math.floor(Math.random() * (MAP_HEIGHT - h - 2)) + 1;
 
@@ -249,49 +261,42 @@
                 if (!failed) {
                     createRoom(newRoom);
                     if (rooms.length > 0) {
-                        const prevRoom = rooms[rooms.length - 1];
-                        createCorridor(prevRoom.cx, prevRoom.cy, newRoom.cx, newRoom.cy);
+                        const prev = rooms[rooms.length - 1];
+                        createCorridor(prev.cx, prev.cy, newRoom.cx, newRoom.cy);
                     }
                     rooms.push(newRoom);
                 }
             }
 
-            // 3. Place Entities
+            // 3. Place Objects
             if(rooms.length > 0) {
-                // Player at first room
                 player.x = rooms[0].cx * TILE_SIZE;
                 player.y = rooms[0].cy * TILE_SIZE;
-
-                // Ghost at last room
+                
                 const lastRoom = rooms[rooms.length - 1];
                 ghost.x = lastRoom.cx * TILE_SIZE;
                 ghost.y = lastRoom.cy * TILE_SIZE;
             }
 
-            // Keys
             keys = [];
             if(rooms.length > 1) {
-                let availableRooms = rooms.slice(1, rooms.length);
-                availableRooms.sort(() => Math.random() - 0.5);
+                let avail = rooms.slice(1);
+                avail.sort(() => Math.random() - 0.5);
 
                 for (let i = 0; i < totalKeys; i++) {
-                    if (i < availableRooms.length) {
-                        let r = availableRooms[i];
-                        keys.push({ x: r.cx * TILE_SIZE, y: r.cy * TILE_SIZE, collected: false });
+                    if (i < avail.length) {
+                        keys.push({ x: avail[i].cx * TILE_SIZE, y: avail[i].cy * TILE_SIZE, collected: false });
                     }
                 }
                 
-                // Exit Door
-                let exitRoom = availableRooms[availableRooms.length - 1]; 
-                exitDoor = { x: exitRoom.cx * TILE_SIZE, y: exitRoom.cy * TILE_SIZE, open: false };
+                let exitR = avail[avail.length - 1]; 
+                exitDoor = { x: exitR.cx * TILE_SIZE, y: exitR.cy * TILE_SIZE, open: false };
             }
         }
 
-        function createRoom(room) {
-            for (let y = room.y; y < room.y + room.h; y++) {
-                for (let x = room.x; x < room.x + room.w; x++) {
-                    map[y][x] = 0;
-                }
+        function createRoom(r) {
+            for (let y = r.y; y < r.y + r.h; y++) {
+                for (let x = r.x; x < r.x + r.w; x++) map[y][x] = 0;
             }
         }
 
@@ -302,12 +307,12 @@
         }
 
         // --- Controls ---
-        function handleInputStart(x, y) {
+        function handleStart(x, y) {
             touchData.active = true;
             touchData.startX = x; touchData.startY = y;
             touchData.currX = x; touchData.currY = y;
         }
-        function handleInputMove(x, y) {
+        function handleMove(x, y) {
             if (!touchData.active) return;
             touchData.currX = x; touchData.currY = y;
             const dx = x - touchData.startX;
@@ -315,20 +320,29 @@
             if (Math.hypot(dx, dy) > 10) {
                 player.moving = true;
                 player.angle = Math.atan2(dy, dx);
-            } else {
-                player.moving = false;
             }
         }
-        function handleInputEnd() { touchData.active = false; player.moving = false; }
+        function handleEnd() { touchData.active = false; player.moving = false; }
 
-        window.addEventListener('touchstart', e => handleInputStart(e.touches[0].clientX, e.touches[0].clientY), {passive:false});
-        window.addEventListener('touchmove', e => { e.preventDefault(); handleInputMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
-        window.addEventListener('touchend', handleInputEnd);
-        window.addEventListener('mousedown', e => handleInputStart(e.clientX, e.clientY));
-        window.addEventListener('mousemove', e => handleInputMove(e.clientX, e.clientY));
-        window.addEventListener('mouseup', handleInputEnd);
+        window.addEventListener('touchstart', e => { 
+            // Only prevent default on canvas to allow button clicks
+            if(e.target === canvas) e.preventDefault();
+            handleStart(e.touches[0].clientX, e.touches[0].clientY); 
+        }, {passive:false});
+        
+        window.addEventListener('touchmove', e => { 
+            if(e.target === canvas) e.preventDefault();
+            handleMove(e.touches[0].clientX, e.touches[0].clientY); 
+        }, {passive:false});
+        
+        window.addEventListener('touchend', handleEnd);
+        
+        // Mouse Fallback
+        window.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+        window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', handleEnd);
 
-        // --- Logic ---
+        // --- Game Logic ---
         function checkWall(x, y) {
             let tx = Math.floor(x / TILE_SIZE);
             let ty = Math.floor(y / TILE_SIZE);
@@ -337,47 +351,37 @@
         }
 
         function resolveCollision(newX, newY) {
-            const padding = player.radius * 0.8;
-            if (!checkWall(newX - padding, player.y - padding) &&
-                !checkWall(newX + padding, player.y - padding) &&
-                !checkWall(newX - padding, player.y + padding) &&
-                !checkWall(newX + padding, player.y + padding)) {
-                player.x = newX;
-            }
-            if (!checkWall(player.x - padding, newY - padding) &&
-                !checkWall(player.x + padding, newY - padding) &&
-                !checkWall(player.x - padding, newY + padding) &&
-                !checkWall(player.x + padding, newY + padding)) {
-                player.y = newY;
-            }
+            const p = player.radius * 0.8;
+            if (!checkWall(newX-p, player.y-p) && !checkWall(newX+p, player.y-p) &&
+                !checkWall(newX-p, player.y+p) && !checkWall(newX+p, player.y+p)) player.x = newX;
+            
+            if (!checkWall(player.x-p, newY-p) && !checkWall(player.x+p, newY-p) &&
+                !checkWall(player.x-p, newY+p) && !checkWall(player.x+p, newY+p)) player.y = newY;
         }
 
         function update() {
-            if (!isGameRunning) return;
             gameTime++;
 
-            // Player Move
+            // Player
             if (player.moving) {
                 let dx = Math.cos(player.angle) * player.speed;
                 let dy = Math.sin(player.angle) * player.speed;
                 resolveCollision(player.x + dx, player.y + dy);
             }
 
-            // Ghost AI
-            let gDx = player.x - ghost.x;
-            let gDy = player.y - ghost.y;
-            let dist = Math.hypot(gDx, gDy);
+            // Ghost
+            let gx = player.x - ghost.x;
+            let gy = player.y - ghost.y;
+            let dist = Math.hypot(gx, gy);
             
             if (dist > 0) {
-                let currentGhostSpeed = ghost.speed;
-                if (dist > 600) currentGhostSpeed *= 1.5; 
-                ghost.x += (gDx / dist) * currentGhostSpeed;
-                ghost.y += (gDy / dist) * currentGhostSpeed;
+                let speed = ghost.speed;
+                if (dist > 600) speed *= 1.5;
+                ghost.x += (gx / dist) * speed;
+                ghost.y += (gy / dist) * speed;
             }
 
-            if (dist < player.radius + ghost.radius) {
-                gameOver(false);
-            }
+            if (dist < player.radius + ghost.radius) gameOver(false);
 
             // Keys
             keys.forEach(k => {
@@ -394,10 +398,8 @@
             }
 
             // Camera
-            camera.x = player.x - canvas.width / 2;
-            camera.y = player.y - canvas.height / 2;
-            camera.x = Math.max(0, Math.min(camera.x, MAP_WIDTH * TILE_SIZE - canvas.width));
-            camera.y = Math.max(0, Math.min(camera.y, MAP_HEIGHT * TILE_SIZE - canvas.height));
+            camera.x = Math.max(0, Math.min(player.x - canvas.width/2, MAP_WIDTH * TILE_SIZE - canvas.width));
+            camera.y = Math.max(0, Math.min(player.y - canvas.height/2, MAP_HEIGHT * TILE_SIZE - canvas.height));
         }
 
         function updateHUD() {
@@ -409,48 +411,59 @@
             }
         }
 
-        // --- Render ---
+        function gameOver(win) {
+            isGameRunning = false;
+            uiLayer.style.display = 'none';
+            goScreen.style.display = 'flex';
+            if (win) {
+                goTitle.textContent = "หนีรอดแล้ว!";
+                goTitle.style.color = "#4eff4e";
+                goDesc.textContent = "คุณหาทางออกเจอ ยอดเยี่ยมมาก!";
+            } else {
+                goTitle.textContent = "Game Over";
+                goTitle.style.color = "#ff4444";
+                goDesc.textContent = "ผีจับคุณกินตับ...";
+            }
+        }
+
+        function loop() {
+            if (isGameRunning) {
+                update();
+                draw();
+                requestAnimationFrame(loop);
+            }
+        }
+
         function draw() {
             if(!isGameRunning) return;
-
-            // BG
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-
             ctx.save();
             ctx.translate(-camera.x, -camera.y);
 
-            // Draw Map
-            let startCol = Math.floor(camera.x / TILE_SIZE);
-            let endCol = startCol + (canvas.width / TILE_SIZE) + 1;
-            let startRow = Math.floor(camera.y / TILE_SIZE);
-            let endRow = startRow + (canvas.height / TILE_SIZE) + 1;
+            // Draw Map (Optimized)
+            let sc = Math.floor(camera.x / TILE_SIZE), ec = sc + Math.ceil(canvas.width/TILE_SIZE) + 1;
+            let sr = Math.floor(camera.y / TILE_SIZE), er = sr + Math.ceil(canvas.height/TILE_SIZE) + 1;
 
-            for (let y = startRow; y <= endRow; y++) {
-                for (let x = startCol; x <= endCol; x++) {
+            for (let y = sr; y <= er; y++) {
+                for (let x = sc; x <= ec; x++) {
                     if (y >= 0 && y < MAP_HEIGHT && x >= 0 && x < MAP_WIDTH) {
-                        if (map[y][x] === 1) {
-                            ctx.fillStyle = '#1a1a1a';
-                            ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                            ctx.strokeStyle = '#333';
-                            ctx.strokeRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        } else {
-                            ctx.fillStyle = '#2d2d2d';
-                            ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        }
+                        ctx.fillStyle = (map[y][x] === 1) ? '#1a1a1a' : '#2d2d2d';
+                        ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                        if(map[y][x] === 1) { ctx.strokeStyle = '#333'; ctx.strokeRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE); }
                     }
                 }
             }
 
-            // Items
+            // Keys
             keys.forEach(k => {
                 if (!k.collected) {
                     ctx.save();
                     ctx.translate(k.x, k.y + Math.sin(gameTime*0.1)*5);
                     ctx.fillStyle = '#ffd700';
-                    ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 10;
                     ctx.beginPath(); ctx.arc(0, -5, 8, 0, Math.PI*2); ctx.fill();
-                    ctx.fillRect(-2, -5, 4, 20); ctx.fillRect(0, 8, 6, 3); ctx.fillRect(0, 12, 6, 3);
+                    ctx.fillRect(-2, -5, 4, 20); ctx.fillRect(0, 8, 6, 3);
                     ctx.restore();
                 }
             });
@@ -460,37 +473,43 @@
             ctx.translate(exitDoor.x, exitDoor.y);
             ctx.fillStyle = exitDoor.open ? '#00ff00' : '#555';
             ctx.fillRect(-20, -20, 40, 40);
-            ctx.fillStyle = 'black';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(exitDoor.open ? "EXIT" : "LOCK", 0, 0);
-            if (exitDoor.open) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(-22, -22, 44, 44); }
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; 
+            ctx.fillText(exitDoor.open?"EXIT":"LOCKED",0,0);
+            if(exitDoor.open) { ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(-22,-22,44,44); }
             ctx.restore();
 
-            // Player & Ghost
-            drawStickman(player.x, player.y, player.angle, player.moving);
-            drawGhost(ghost.x, ghost.y);
+            // Player
+            ctx.save(); ctx.translate(player.x, player.y);
+            ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.arc(0, -15, 10, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, 15); ctx.stroke();
+            let leg = player.moving ? Math.sin(gameTime*0.3)*8 : 0;
+            ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(-8+leg, 35); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(8-leg, 35); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(Math.cos(player.angle)*15, Math.sin(player.angle)*15); ctx.stroke();
+            // Flashlight
+            ctx.rotate(player.angle); ctx.fillStyle = 'rgba(255, 255, 200, 0.2)';
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 150, -0.3, 0.3); ctx.fill();
+            ctx.restore();
+
+            // Ghost
+            ctx.save(); ctx.translate(ghost.x, ghost.y);
+            ctx.fillStyle = 'rgba(255, 50, 50, 0.8)'; ctx.shadowColor = 'red'; ctx.shadowBlur = 20;
+            ctx.beginPath(); ctx.arc(0, -10, 15, Math.PI, 0); ctx.lineTo(15, 20);
+            ctx.quadraticCurveTo(7, 10, 0, 20); ctx.quadraticCurveTo(-7, 10, -15, 20); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, -10, 4, 0, Math.PI*2); ctx.arc(6, -10, 4, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
 
             ctx.restore();
 
-            // Lighting
-            const g = ctx.createRadialGradient(
-                canvas.width/2, canvas.height/2, 50,
-                canvas.width/2, canvas.height/2, canvas.height
-            );
-            
-            let distToGhost = Math.hypot(player.x - ghost.x, player.y - ghost.y);
-            let dangerLevel = Math.max(0, 1 - (distToGhost / 400));
-            let darkColor = `rgba(${50 + dangerLevel*200}, 0, 0, ${0.6 + dangerLevel*0.3})`;
+            // Darkness Overlay
+            const g = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 50, canvas.width/2, canvas.height/2, canvas.height);
+            let d = Math.max(0, 1 - (Math.hypot(player.x-ghost.x, player.y-ghost.y)/400));
+            g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.3, 'rgba(0,0,0,0.1)');
+            g.addColorStop(1, `rgba(${50+d*200}, 0, 0, ${0.6+d*0.3})`);
+            ctx.fillStyle = g; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            g.addColorStop(0, 'rgba(0,0,0,0)');
-            g.addColorStop(0.3, 'rgba(0,0,0,0.1)');
-            g.addColorStop(1, darkColor);
-
-            ctx.fillStyle = g;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Joystick
+            // Joystick Visual
             if (touchData.active) {
                 ctx.beginPath(); ctx.arc(touchData.startX, touchData.startY, 40, 0, Math.PI*2);
                 ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 3; ctx.stroke();
@@ -498,33 +517,6 @@
                 ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
             }
         }
-
-        function drawStickman(x, y, angle, isMoving) {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-            ctx.beginPath(); ctx.arc(0, -15, 10, 0, Math.PI*2); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, 15); ctx.stroke();
-            let legOffset = isMoving ? Math.sin(gameTime * 0.3) * 8 : 0;
-            ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(-8 + legOffset, 35); ctx.moveTo(0, 15); ctx.lineTo(8 - legOffset, 35); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(Math.cos(angle)*15, Math.sin(angle)*15); ctx.stroke();
-            ctx.rotate(angle); ctx.fillStyle = 'rgba(255, 255, 200, 0.2)';
-            ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 150, -0.3, 0.3); ctx.fill();
-            ctx.restore();
-        }
-
-        function drawGhost(x, y) {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.translate(Math.random()*2 - 1, Math.random()*2 - 1);
-            ctx.fillStyle = 'rgba(255, 50, 50, 0.8)';
-            ctx.shadowColor = 'red'; ctx.shadowBlur = 20;
-            ctx.beginPath(); ctx.arc(0, -10, 15, Math.PI, 0); ctx.lineTo(15, 20);
-            ctx.quadraticCurveTo(7, 10, 0, 20); ctx.quadraticCurveTo(-7, 10, -15, 20);
-            ctx.closePath(); ctx.fill();
-            ctx.fillStyle = '#fff';
-            ctx.beginPath(); ctx.arc(-6, -10, 4, 0, Math.PI*2); ctx.arc(6, -10, 4, 0, Math.PI*2); ctx.fill();
-            ctx.restore();
-        }
-
-        fu
+    </script>
+</body>
+</html>
